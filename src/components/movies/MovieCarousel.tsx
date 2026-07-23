@@ -37,6 +37,25 @@ export function MovieCarousel({ title, movies, priority }: MovieCarouselProps) {
     };
   }, [updateArrows, movies.length]);
 
+  // Mouse wheel scrolls the track horizontally. Registered natively with
+  // passive:false — React's synthetic wheel handlers can't preventDefault.
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0 || e.shiftKey) return; // shift+wheel already pans natively
+      if (el.scrollWidth <= el.clientWidth) return;
+      const atStart = el.scrollLeft <= 0;
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+      // At the edges let the page keep scrolling vertically.
+      if ((e.deltaY > 0 && atEnd) || (e.deltaY < 0 && atStart)) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   const scrollBy = (direction: 1 | -1) => {
     const el = trackRef.current;
     if (!el) return;
@@ -56,16 +75,17 @@ export function MovieCarousel({ title, movies, priority }: MovieCarouselProps) {
       </div>
 
       <div className="group/track relative">
+        {/* No CSS scroll-snap/smooth here: they fight incremental wheel deltas. */}
         <div
           ref={trackRef}
-          className="scrollbar-hide -mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth px-1 pb-2"
+          className="scrollbar-hide -mx-1 flex gap-4 overflow-x-auto px-1 pb-2"
         >
           {movies.map((movie, index) => (
             <MovieCard
               key={movie.id}
               movie={movie}
               priority={priority && index < 6}
-              className="w-[45vw] shrink-0 snap-start sm:w-[30vw] md:w-[200px] lg:w-[210px]"
+              className="w-[45vw] shrink-0 sm:w-[30vw] md:w-[200px] lg:w-[210px]"
             />
           ))}
         </div>

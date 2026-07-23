@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PhimVerse 🎬
 
-## Getting Started
+Website xem phim trực tuyến chất lượng 4K, lấy cảm hứng thiết kế từ PhimFox.
+Next.js 16 (App Router) · Vercel Blob · Neon Postgres · Upstash Redis · streaming từ OneDrive.
 
-First, run the development server:
+## Chạy thử ngay (demo mode — không cần cấu hình)
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Mở http://localhost:3000 — app tự chạy với catalog 21 phim trong bộ nhớ và video mẫu.
+Tài khoản demo: `demo@phimverse.dev` / `demo1234`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Cấu hình hạ tầng thật (Vercel + OneDrive): xem **[SETUP.md](SETUP.md)**.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Kiến trúc
 
-## Learn More
+```text
+src/
+├── app/                  # Routes (App Router) + API routes
+├── components/           # UI components (layout, movies, player, ...)
+├── data/catalog.ts       # Nguồn dữ liệu demo duy nhất (memory repo + seed + posters)
+├── lib/                  # Hằng số, helpers dùng chung client/server
+├── server/
+│   ├── db/               # Drizzle schema + Neon client
+│   ├── cache/            # Redis (Upstash) + fallback in-memory, read-through cache
+│   ├── onedrive/         # Microsoft Graph client (token + downloadUrl)
+│   ├── storage/          # Vercel Blob wrapper
+│   ├── repositories/     # Repository pattern: interface + Drizzle impl + Memory impl
+│   ├── services/         # Business logic (movie, stream, trending, user)
+│   └── actions/          # Server Actions (auth, profile, collection)
+└── types/                # Domain types dùng chung
+```
 
-To learn more about Next.js, take a look at the following resources:
+**Design patterns chính**
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Repository pattern** — service layer chỉ phụ thuộc interface trong
+  `repositories/types.ts`; factory tự chọn Postgres hay in-memory theo env.
+  Thêm backend mới = implement interface, không sửa business logic.
+- **Service layer** — caching policy, validation, nghiệp vụ nằm ở
+  `server/services/*`, tách khỏi cả UI lẫn data access.
+- **Read-through cache** — helper `cached()` bọc mọi truy vấn nóng bằng Redis.
+- **Adapter cho hạ tầng** — Blob/OneDrive/Redis đều là module mỏng, dễ thay thế.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Vì sao 4K mượt**: player gọi `/api/stream/:id?format=json` một lần để lấy URL
+CDN (OneDrive `downloadUrl`, hỗ trợ HTTP Range, cache 45' trong Redis) rồi phát
+trực tiếp — byte video không bao giờ đi qua serverless function. URL hết hạn
+giữa chừng sẽ được player tự resolve lại và tua về đúng vị trí.
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Lệnh | Chức năng |
+| --- | --- |
+| `npm run dev` / `build` / `start` | Next.js |
+| `npm run lint` / `typecheck` | ESLint / tsc |
+| `npm run posters` | Sinh poster + backdrop demo vào `/public` |
+| `npm run db:push` | Tạo bảng Postgres từ schema (drizzle-kit) |
+| `npm run db:seed` | Seed catalog + tài khoản demo (tự upload ảnh lên Blob nếu có token) |
+| `npm run db:studio` | Drizzle Studio — xem/sửa dữ liệu |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Tính năng
+
+- Trang chủ: hero banner xoay vòng, bộ lọc (loại/thể loại/quốc gia/năm/thời lượng/sắp xếp), carousel Phim Đề Cử / Phim Lẻ Mới / Phim Bộ Mới / Xem Nhiều / Đánh Giá Cao
+- Trang chi tiết + danh sách tập, phim liên quan
+- Player tùy biến: tua nhanh, âm lượng, tốc độ phát, PiP, fullscreen, phím tắt, HLS (hls.js), tự lưu & khôi phục tiến độ xem
+- Tìm kiếm live (debounce) + trang kết quả
+- Danh sách của tôi: Cập Nhật (đang xem dở kèm progress) / Đang Xem / Mong Muốn / Đã Xem
+- Tài khoản: đổi tên/email/mật khẩu, số dư, mã mời bạn bè
+- Trending theo tuần (Redis sorted set), đăng ký/đăng nhập (Auth.js v5)

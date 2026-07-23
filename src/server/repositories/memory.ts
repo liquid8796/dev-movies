@@ -35,8 +35,12 @@ interface MemoryEpisode extends Episode {
   fallbackUrl: string | null;
 }
 
+interface MemoryMovie extends Movie {
+  episodes: MemoryEpisode[];
+}
+
 interface MemoryState {
-  movies: (MovieDetail & { episodes: MemoryEpisode[] })[];
+  movies: MemoryMovie[];
   users: UserRecord[];
   collections: Map<string, { status: CollectionStatus; updatedAt: string }>;
   progress: Map<string, WatchProgress>;
@@ -117,7 +121,7 @@ function state(): MemoryState {
   return globalForMemory.__memoryState;
 }
 
-function stripEpisodes(m: MovieDetail): Movie {
+function stripEpisodes(m: MemoryMovie): Movie {
   const { episodes: _episodes, ...movie } = m;
   return { ...movie };
 }

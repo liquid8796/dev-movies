@@ -14,7 +14,7 @@ import { resolveStream } from "@/server/services/stream.service";
  * (recommended in production to prevent hotlinking).
  */
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ episodeId: string }> },
 ) {
   if (process.env.STREAM_REQUIRE_AUTH === "1") {
@@ -30,12 +30,21 @@ export async function GET(
     return NextResponse.json({ error: "not-found" }, { status: 404 });
   }
 
+  // The resolved URL rotates (~1h expiry) — never cache this response.
+  const noStore = { "Cache-Control": "private, no-store" };
+
+  // format=json: the in-app player plays the CDN URL directly, so seeks and
+  // buffering never invoke this function again during the session.
+  if (new URL(req.url).searchParams.get("format") === "json") {
+    return NextResponse.json(
+      { url: source.url, type: source.type, origin: source.origin },
+      { headers: noStore },
+    );
+  }
+
+  // Default: 302 redirect — handy for external players and <video src> embeds.
   return NextResponse.redirect(source.url, {
     status: 302,
-    headers: {
-      // The redirect target rotates (~1h expiry) — never cache the redirect itself.
-      "Cache-Control": "private, no-store",
-      "X-Stream-Origin": source.origin,
-    },
+    headers: { ...noStore, "X-Stream-Origin": source.origin },
   });
 }

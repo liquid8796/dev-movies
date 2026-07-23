@@ -23,4 +23,6 @@ architecture and SETUP.md for infrastructure config.
   play it directly.
 - UI text is Vietnamese; code identifiers and comments are English.
 - Commits follow `type(scope): message` and bump the package version.
+- After every patch commit, push to `origin/master` immediately (user rule).
+  If the push is rejected, fetch/rebase and report — never force-push.
 - Verify with `npm run lint && npm run typecheck && npm run build` before committing.

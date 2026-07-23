@@ -16,7 +16,8 @@ import {
   VolumeX,
 } from "lucide-react";
 import type Hls from "hls.js";
-import type { StreamType } from "@/types";
+import type { EpisodeSource, StreamType } from "@/types";
+import { resolutionLabel } from "@/lib/constants";
 import { clamp, cn, formatClock } from "@/lib/utils";
 
 /**
@@ -32,7 +33,6 @@ import { clamp, cn, formatClock } from "@/lib/utils";
 interface VideoPlayerProps {
   episodeId: string;
   movieId: string;
-  sourceType: StreamType;
   poster?: string;
   title: string;
   subtitle?: string;
@@ -48,7 +48,6 @@ const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 export function VideoPlayer({
   episodeId,
   movieId,
-  sourceType,
   poster,
   title,
   subtitle,
@@ -62,6 +61,8 @@ export function VideoPlayer({
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumedRef = useRef(false);
   const recoveringRef = useRef(false);
+  /** Viewer-chosen resolution, kept across expiry-recovery re-resolves. */
+  const resolutionRef = useRef<string | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [waiting, setWaiting] = useState(true);
@@ -75,24 +76,36 @@ export function VideoPlayer({
   const [controlsVisible, setControlsVisible] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rateMenuOpen, setRateMenuOpen] = useState(false);
+  const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
+  const [resolution, setResolution] = useState<string | null>(null);
+  const [available, setAvailable] = useState<EpisodeSource[]>([]);
 
-  /** Resolve the stream and attach it to the video element. */
+  /** Resolve the stream (optionally at a specific resolution) and attach it. */
   const attachSource = useCallback(
-    async (resumeAt?: number) => {
+    async (resumeAt?: number, preferredRes?: string) => {
       const video = videoRef.current;
       if (!video) return;
       setError(null);
       setWaiting(true);
       try {
-        const res = await fetch(`/api/stream/${episodeId}?format=json`);
+        const wanted = preferredRes ?? resolutionRef.current;
+        const query = wanted ? `&res=${encodeURIComponent(wanted)}` : "";
+        const res = await fetch(`/api/stream/${episodeId}?format=json${query}`);
         if (!res.ok) throw new Error(`stream resolve failed: ${res.status}`);
-        const source = (await res.json()) as { url: string; type: StreamType };
+        const source = (await res.json()) as {
+          url: string;
+          type: StreamType;
+          resolution: string;
+          available: EpisodeSource[];
+        };
+        resolutionRef.current = source.resolution;
+        setResolution(source.resolution);
+        setAvailable(source.available ?? []);
 
         hlsRef.current?.destroy();
         hlsRef.current = null;
 
-        const isHls =
-          source.type === "hls" || sourceType === "hls" || source.url.includes(".m3u8");
+        const isHls = source.type === "hls" || source.url.includes(".m3u8");
         if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
           const { default: HlsClass } = await import("hls.js");
           if (HlsClass.isSupported()) {
@@ -121,7 +134,18 @@ export function VideoPlayer({
         setWaiting(false);
       }
     },
-    [episodeId, sourceType],
+    [episodeId],
+  );
+
+  /** Switch quality in place: re-resolve and resume at the current position. */
+  const switchResolution = useCallback(
+    (nextRes: string) => {
+      setQualityMenuOpen(false);
+      if (nextRes === resolutionRef.current) return;
+      const video = videoRef.current;
+      attachSource(video && video.currentTime > 0 ? video.currentTime : undefined, nextRes);
+    },
+    [attachSource],
   );
 
   useEffect(() => {
@@ -178,6 +202,7 @@ export function VideoPlayer({
       if (video && !video.paused) {
         setControlsVisible(false);
         setRateMenuOpen(false);
+        setQualityMenuOpen(false);
       }
     }, 2600);
   }, []);
@@ -488,11 +513,59 @@ export function VideoPlayer({
           </span>
 
           <div className="ml-auto flex items-center gap-1 md:gap-2">
+            {/* Quality selector */}
+            {available.length > 1 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQualityMenuOpen((v) => !v);
+                    setRateMenuOpen(false);
+                  }}
+                  aria-label="Chọn chất lượng"
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors hover:bg-white/15 md:text-sm",
+                    resolution === "2160p" && "text-amber-300",
+                  )}
+                >
+                  {resolution ? resolutionLabel(resolution) : "Auto"}
+                </button>
+                {qualityMenuOpen && (
+                  <div className="absolute bottom-10 right-0 w-32 overflow-hidden rounded-xl border border-white/10 bg-black/90 py-1 backdrop-blur-md">
+                    <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/50">
+                      Chất lượng
+                    </p>
+                    {available.map((variant) => (
+                      <button
+                        key={variant.resolution}
+                        type="button"
+                        onClick={() => switchResolution(variant.resolution)}
+                        className={cn(
+                          "flex w-full items-center justify-between px-3 py-1.5 text-left text-sm transition-colors hover:bg-white/10",
+                          variant.resolution === resolution ? "text-neon" : "text-white/85",
+                        )}
+                      >
+                        {resolutionLabel(variant.resolution)}
+                        {variant.resolution === "2160p" && (
+                          <span className="rounded bg-amber-400/20 px-1 text-[10px] font-bold text-amber-300">
+                            UHD
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Playback rate */}
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setRateMenuOpen((v) => !v)}
+                onClick={() => {
+                  setRateMenuOpen((v) => !v);
+                  setQualityMenuOpen(false);
+                }}
                 className="rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors hover:bg-white/15 md:text-sm"
               >
                 {rate}x

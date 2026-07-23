@@ -9,18 +9,24 @@
  * streaming service will prefer it automatically.
  */
 
-import type { MovieType, StreamType } from "@/types";
+import type { MovieType, Resolution, StreamType } from "@/types";
+
+export interface CatalogSource {
+  resolution: Resolution;
+  sourceType: StreamType;
+  /** Path inside OneDrive, e.g. "Movies/silo/2160p/e01.mp4". Optional in demo mode. */
+  oneDrivePath?: string;
+  /** Public demo URL used when OneDrive is not configured. */
+  fallbackUrl?: string;
+}
 
 export interface CatalogEpisode {
   season: number;
   number: number;
   title: string;
   duration: number;
-  sourceType: StreamType;
-  /** Path inside OneDrive, e.g. "Movies/silo/e01.mp4". Optional in demo mode. */
-  oneDrivePath?: string;
-  /** Public demo URL used when OneDrive is not configured. */
-  fallbackUrl: string;
+  /** Quality variants the viewer can pick from. */
+  sources: CatalogSource[];
 }
 
 export interface CatalogMovie {
@@ -60,27 +66,53 @@ function nextSample(): string {
   return SAMPLE_MP4[sampleCursor++ % SAMPLE_MP4.length];
 }
 
-function singleEpisode(duration: number): CatalogEpisode[] {
+/**
+ * Demo quality ladder: the resolutions offered depend on the movie's quality
+ * badge. All variants reuse the same sample URL — with real OneDrive files
+ * each resolution points at its own encode.
+ */
+function demoSources(quality: string, useHls = false): CatalogSource[] {
+  const url = nextSample();
+  const ladder: Resolution[] =
+    quality === "4K"
+      ? ["2160p", "1080p", "720p", "360p"]
+      : quality === "FHD"
+        ? ["1080p", "720p", "360p"]
+        : ["720p", "360p"];
+  const sources: CatalogSource[] = ladder.map((resolution) => ({
+    resolution,
+    sourceType: "mp4",
+    fallbackUrl: url,
+  }));
+  if (useHls) {
+    // Adaptive HLS demo stream exposed as the 1080p variant.
+    sources.splice(ladder.indexOf("1080p"), 1, {
+      resolution: "1080p",
+      sourceType: "hls",
+      fallbackUrl: SAMPLE_HLS,
+    });
+  }
+  return sources;
+}
+
+function singleEpisode(duration: number, quality: string): CatalogEpisode[] {
   return [
-    {
-      season: 1,
-      number: 1,
-      title: "Bản Full",
-      duration,
-      sourceType: "mp4",
-      fallbackUrl: nextSample(),
-    },
+    { season: 1, number: 1, title: "Bản Full", duration, sources: demoSources(quality) },
   ];
 }
 
-function seriesEpisodes(count: number, duration: number, useHls = false): CatalogEpisode[] {
+function seriesEpisodes(
+  count: number,
+  duration: number,
+  quality: string,
+  useHls = false,
+): CatalogEpisode[] {
   return Array.from({ length: count }, (_, i) => ({
     season: 1,
     number: i + 1,
     title: `Tập ${i + 1}`,
     duration,
-    sourceType: (useHls && i === 0 ? "hls" : "mp4") as StreamType,
-    fallbackUrl: useHls && i === 0 ? SAMPLE_HLS : nextSample(),
+    sources: demoSources(quality, useHls && i === 0),
   }));
 }
 
@@ -100,7 +132,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 1250000,
     featured: true,
     genres: ["co-trang", "vien-tuong", "phieu-luu"],
-    episodes: seriesEpisodes(10, 45, true),
+    episodes: seriesEpisodes(10, 45, "4K", true),
   },
   {
     slug: "silo",
@@ -117,7 +149,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 2140000,
     featured: true,
     genres: ["vien-tuong", "tam-ly", "chinh-kich"],
-    episodes: seriesEpisodes(10, 55),
+    episodes: seriesEpisodes(10, 55, "4K"),
   },
   {
     slug: "the-than-ngu-khi-su-cuoi-cung",
@@ -134,7 +166,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 1830000,
     featured: true,
     genres: ["phieu-luu", "vien-tuong", "gia-dinh"],
-    episodes: seriesEpisodes(8, 50),
+    episodes: seriesEpisodes(8, 50, "FHD"),
   },
   {
     slug: "project-hail-mary",
@@ -151,7 +183,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 980000,
     featured: true,
     genres: ["vien-tuong", "phieu-luu", "chinh-kich"],
-    episodes: singleEpisode(138),
+    episodes: singleEpisode(138, "4K"),
   },
   {
     slug: "xam-lang",
@@ -168,7 +200,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 890000,
     featured: true,
     genres: ["vien-tuong", "tam-ly"],
-    episodes: seriesEpisodes(10, 52),
+    episodes: seriesEpisodes(10, 52, "FHD"),
   },
   {
     slug: "he-man-va-nhung-chien-binh-vu-tru",
@@ -185,7 +217,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 640000,
     featured: true,
     genres: ["hanh-dong", "vien-tuong", "phieu-luu"],
-    episodes: singleEpisode(126),
+    episodes: singleEpisode(126, "4K"),
   },
   {
     slug: "cua-hang-sat-thu",
@@ -202,7 +234,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 1120000,
     featured: true,
     genres: ["hanh-dong", "tam-ly"],
-    episodes: seriesEpisodes(8, 60),
+    episodes: seriesEpisodes(8, 60, "FHD"),
   },
   {
     slug: "phim-hai-kinh-di-6",
@@ -219,7 +251,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 720000,
     featured: true,
     genres: ["hai", "kinh-di"],
-    episodes: singleEpisode(95),
+    episodes: singleEpisode(95, "FHD"),
   },
   {
     slug: "loi-nguyen-dong-cung",
@@ -236,7 +268,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 560000,
     featured: true,
     genres: ["co-trang", "tinh-cam", "tam-ly"],
-    episodes: seriesEpisodes(12, 45),
+    episodes: seriesEpisodes(12, 45, "FHD"),
   },
   {
     slug: "backrooms-thuc-the-quy-di",
@@ -253,7 +285,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 430000,
     featured: false,
     genres: ["kinh-di", "vien-tuong"],
-    episodes: singleEpisode(102),
+    episodes: singleEpisode(102, "HD"),
   },
   {
     slug: "con-thinh-no",
@@ -270,7 +302,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 380000,
     featured: false,
     genres: ["hanh-dong", "tam-ly"],
-    episodes: singleEpisode(118),
+    episodes: singleEpisode(118, "4K"),
   },
   {
     slug: "nguoi-nhen-thanh-paris",
@@ -287,7 +319,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 210000,
     featured: false,
     genres: ["tai-lieu", "tam-ly"],
-    episodes: singleEpisode(98),
+    episodes: singleEpisode(98, "FHD"),
   },
   {
     slug: "tinh-yeu-o-thanh-pho-lon",
@@ -304,7 +336,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 340000,
     featured: false,
     genres: ["tinh-cam", "hai", "chinh-kich"],
-    episodes: singleEpisode(118),
+    episodes: singleEpisode(118, "FHD"),
   },
   {
     slug: "ngay-tiet-lo",
@@ -321,7 +353,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 190000,
     featured: false,
     genres: ["vien-tuong", "tam-ly", "chinh-kich"],
-    episodes: singleEpisode(109),
+    episodes: singleEpisode(109, "FHD"),
   },
   {
     slug: "cai-chet-trang",
@@ -338,7 +370,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 150000,
     featured: false,
     genres: ["kinh-di", "tam-ly", "chinh-kich"],
-    episodes: singleEpisode(112),
+    episodes: singleEpisode(112, "HD"),
   },
   {
     slug: "dac-vu-kim",
@@ -355,7 +387,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 280000,
     featured: false,
     genres: ["hanh-dong", "hai"],
-    episodes: singleEpisode(105),
+    episodes: singleEpisode(105, "FHD"),
   },
   {
     slug: "hanh-tinh-cat-phan-hai",
@@ -372,7 +404,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 1650000,
     featured: false,
     genres: ["vien-tuong", "phieu-luu", "chinh-kich"],
-    episodes: singleEpisode(166),
+    episodes: singleEpisode(166, "4K"),
   },
   {
     slug: "ke-trom-mat-trang-4",
@@ -389,7 +421,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 920000,
     featured: false,
     genres: ["hoat-hinh", "hai", "gia-dinh"],
-    episodes: singleEpisode(94),
+    episodes: singleEpisode(94, "FHD"),
   },
   {
     slug: "vung-dat-cam-lang-ngay-mot",
@@ -406,7 +438,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 780000,
     featured: false,
     genres: ["kinh-di", "vien-tuong"],
-    episodes: singleEpisode(99),
+    episodes: singleEpisode(99, "4K"),
   },
   {
     slug: "bi-kip-luyen-rong",
@@ -423,7 +455,7 @@ export const CATALOG: CatalogMovie[] = [
     views: 860000,
     featured: false,
     genres: ["phieu-luu", "gia-dinh", "vien-tuong"],
-    episodes: singleEpisode(125),
+    episodes: singleEpisode(125, "4K"),
   },
   {
     slug: "tro-choi-con-muc-3",
@@ -440,6 +472,6 @@ export const CATALOG: CatalogMovie[] = [
     views: 2450000,
     featured: false,
     genres: ["tam-ly", "hanh-dong", "chinh-kich"],
-    episodes: seriesEpisodes(6, 58),
+    episodes: seriesEpisodes(6, 58, "4K"),
   },
 ];

@@ -1,10 +1,11 @@
-import { GENRES, COUNTRIES } from "@/lib/constants";
+import { GENRES, COUNTRIES, isResolution, resolutionLabel } from "@/lib/constants";
 import { slugify } from "@/lib/utils";
 import { getRepositories } from "@/server/repositories";
 import type {
   AdminEpisodeInput,
   AdminMovieDetail,
   AdminMovieInput,
+  AdminSourceInput,
 } from "@/server/repositories/types";
 import { bumpCatalogVersion } from "./movie.service";
 import type { Movie } from "@/types";
@@ -56,19 +57,40 @@ function validate(input: AdminMovieInput): AdminMovieInput {
     const key = `${ep.season}:${number}`;
     if (seen.has(key)) throw new AdminServiceError(`Tập ${number} bị trùng số tập.`);
     seen.add(key);
-    if (!ep.oneDrivePath?.trim() && !ep.fallbackUrl?.trim()) {
-      throw new AdminServiceError(
-        `Tập ${number}: cần điền OneDrive path hoặc URL dự phòng để phát được.`,
-      );
+
+    if (!ep.sources || ep.sources.length === 0) {
+      throw new AdminServiceError(`Tập ${number}: cần ít nhất một độ phân giải.`);
     }
+    const seenResolutions = new Set<string>();
+    const sources = ep.sources.map((source): AdminSourceInput => {
+      if (!isResolution(source.resolution)) {
+        throw new AdminServiceError(`Tập ${number}: độ phân giải không hợp lệ.`);
+      }
+      if (seenResolutions.has(source.resolution)) {
+        throw new AdminServiceError(
+          `Tập ${number}: độ phân giải ${resolutionLabel(source.resolution)} bị trùng.`,
+        );
+      }
+      seenResolutions.add(source.resolution);
+      if (!source.oneDrivePath?.trim() && !source.fallbackUrl?.trim()) {
+        throw new AdminServiceError(
+          `Tập ${number} (${resolutionLabel(source.resolution)}): cần điền OneDrive path hoặc URL dự phòng để phát được.`,
+        );
+      }
+      return {
+        resolution: source.resolution,
+        sourceType: source.sourceType === "hls" ? "hls" : "mp4",
+        oneDrivePath: source.oneDrivePath?.trim() || null,
+        fallbackUrl: source.fallbackUrl?.trim() || null,
+      };
+    });
+
     return {
       season: Number.isFinite(ep.season) && ep.season > 0 ? ep.season : 1,
       number,
       title: ep.title.trim() || (input.type === "series" ? `Tập ${number}` : "Bản Full"),
       duration: Number.isFinite(ep.duration) && ep.duration > 0 ? ep.duration : input.duration,
-      sourceType: ep.sourceType === "hls" ? "hls" : "mp4",
-      oneDrivePath: ep.oneDrivePath?.trim() || null,
-      fallbackUrl: ep.fallbackUrl?.trim() || null,
+      sources,
     };
   });
 

@@ -117,16 +117,23 @@ curl -H "Authorization: Bearer ACCESS_TOKEN" "https://graph.microsoft.com/v1.0/u
 
 Env cần đặt: `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT_ID`, `ONEDRIVE_DRIVE_ID`.
 
-### 4d. Gắn file phim vào episode
+### 4d. Gắn file phim vào episode (đa độ phân giải)
 
-Upload phim lên OneDrive (ví dụ thư mục `Movies/silo/e01.mp4`), rồi cập nhật cột `onedrive_path` của bảng `episodes`:
+Mỗi tập phim có thể có nhiều biến thể độ phân giải (4K / 1080p / 720p / 360p) — người xem
+chọn chất lượng ngay trong trình phát. Upload từng bản encode lên OneDrive, ví dụ:
 
-```sql
-UPDATE episodes SET onedrive_path = 'Movies/silo/e01.mp4'
-WHERE movie_id = (SELECT id FROM movies WHERE slug = 'silo') AND number = 1;
+```text
+Movies/silo/2160p/e01.mp4
+Movies/silo/1080p/e01.mp4
+Movies/silo/720p/e01.mp4
 ```
 
-(Dùng `npm run db:studio` cho tiện.) Có `onedrive_path` là app tự ưu tiên OneDrive; nếu lỗi sẽ fallback về `fallback_url`.
+Cách gắn dễ nhất: vào **trang quản trị** (`/admin` → Sửa phim) — mỗi tập có danh sách
+độ phân giải, điền `OneDrive path` cho từng bản. Hoặc sửa trực tiếp bảng
+`episode_sources` (`npm run db:studio`): mỗi dòng = 1 độ phân giải của 1 tập với
+`resolution`, `onedrive_path`, `fallback_url`. Có `onedrive_path` là app tự ưu tiên
+OneDrive; nếu lỗi sẽ fallback về `fallback_url`, và nếu thiếu độ phân giải được yêu cầu
+thì tự phát bản tốt nhất còn lại.
 
 > **Khuyến nghị 4K**: dùng MP4 (H.264/H.265) có **moov atom ở đầu file** (faststart) để tua nhanh không phải tải đuôi file. Encode: `ffmpeg -i in.mkv -c copy -movflags +faststart out.mp4`.
 

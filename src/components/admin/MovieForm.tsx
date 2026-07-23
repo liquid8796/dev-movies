@@ -4,8 +4,12 @@ import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { saveMovieAction, type AdminActionState } from "@/server/actions/admin.actions";
-import type { AdminEpisodeInput, AdminMovieDetail } from "@/server/repositories/types";
-import { COUNTRIES, GENRES } from "@/lib/constants";
+import type {
+  AdminEpisodeInput,
+  AdminMovieDetail,
+  AdminSourceInput,
+} from "@/server/repositories/types";
+import { COUNTRIES, GENRES, RESOLUTIONS } from "@/lib/constants";
 import { cn, slugify } from "@/lib/utils";
 
 interface MovieFormProps {
@@ -17,16 +21,12 @@ const inputClass =
   "h-10 w-full rounded-lg border border-line bg-night-800 px-3 text-sm text-ink outline-none transition-colors placeholder:text-dim/40 focus:border-gold";
 const labelClass = "mb-1.5 block text-[13px] font-semibold text-ink";
 
+function newSource(resolution: AdminSourceInput["resolution"]): AdminSourceInput {
+  return { resolution, sourceType: "mp4", oneDrivePath: null, fallbackUrl: null };
+}
+
 function newEpisode(number: number): AdminEpisodeInput {
-  return {
-    season: 1,
-    number,
-    title: "",
-    duration: 0,
-    sourceType: "mp4",
-    oneDrivePath: null,
-    fallbackUrl: null,
-  };
+  return { season: 1, number, title: "", duration: 0, sources: [newSource("1080p")] };
 }
 
 export function MovieForm({ initial }: MovieFormProps) {
@@ -57,6 +57,42 @@ export function MovieForm({ initial }: MovieFormProps) {
 
   const removeEpisode = (index: number) => {
     setEpisodes((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+  };
+
+  const updateSource = (
+    epIndex: number,
+    srcIndex: number,
+    patch: Partial<AdminSourceInput>,
+  ) => {
+    setEpisodes((prev) =>
+      prev.map((ep, i) =>
+        i === epIndex
+          ? { ...ep, sources: ep.sources.map((s, j) => (j === srcIndex ? { ...s, ...patch } : s)) }
+          : ep,
+      ),
+    );
+  };
+
+  const addSource = (epIndex: number) => {
+    setEpisodes((prev) =>
+      prev.map((ep, i) => {
+        if (i !== epIndex) return ep;
+        const used = new Set(ep.sources.map((s) => s.resolution));
+        const free = RESOLUTIONS.find((r) => !used.has(r.value));
+        if (!free) return ep; // every resolution already present
+        return { ...ep, sources: [...ep.sources, newSource(free.value)] };
+      }),
+    );
+  };
+
+  const removeSource = (epIndex: number, srcIndex: number) => {
+    setEpisodes((prev) =>
+      prev.map((ep, i) =>
+        i === epIndex && ep.sources.length > 1
+          ? { ...ep, sources: ep.sources.filter((_, j) => j !== srcIndex) }
+          : ep,
+      ),
+    );
   };
 
   const switchType = (next: "single" | "series") => {
@@ -265,83 +301,138 @@ export function MovieForm({ initial }: MovieFormProps) {
           )}
         </div>
 
-        <div className="space-y-3">
-          {episodes.map((ep, index) => (
-            <div
-              key={index}
-              className="grid gap-3 rounded-xl border border-line/70 bg-night-800/50 p-3 md:grid-cols-[70px_1fr_90px_100px_1fr_1fr_40px]"
-            >
-              <label className="block">
-                <span className={labelClass}>Tập</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={ep.number}
-                  onChange={(e) => updateEpisode(index, { number: Number(e.target.value) })}
-                  className={inputClass}
-                  disabled={type === "single"}
-                />
-              </label>
-              <label className="block">
-                <span className={labelClass}>Tiêu đề tập</span>
-                <input
-                  value={ep.title}
-                  onChange={(e) => updateEpisode(index, { title: e.target.value })}
-                  placeholder={type === "series" ? `Tập ${ep.number}` : "Bản Full"}
-                  className={inputClass}
-                />
-              </label>
-              <label className="block">
-                <span className={labelClass}>Phút</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={ep.duration || ""}
-                  onChange={(e) => updateEpisode(index, { duration: Number(e.target.value) })}
-                  className={inputClass}
-                />
-              </label>
-              <label className="block">
-                <span className={labelClass}>Định dạng</span>
-                <select
-                  value={ep.sourceType}
-                  onChange={(e) =>
-                    updateEpisode(index, { sourceType: e.target.value as "mp4" | "hls" })
-                  }
-                  className={inputClass}
-                >
-                  <option value="mp4">MP4</option>
-                  <option value="hls">HLS</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className={labelClass}>OneDrive path</span>
-                <input
-                  value={ep.oneDrivePath ?? ""}
-                  onChange={(e) => updateEpisode(index, { oneDrivePath: e.target.value || null })}
-                  placeholder="Movies/ten-phim/e01.mp4"
-                  className={cn(inputClass, "font-mono text-xs")}
-                />
-              </label>
-              <label className="block">
-                <span className={labelClass}>URL dự phòng</span>
-                <input
-                  value={ep.fallbackUrl ?? ""}
-                  onChange={(e) => updateEpisode(index, { fallbackUrl: e.target.value || null })}
-                  placeholder="https://..."
-                  className={cn(inputClass, "font-mono text-xs")}
-                />
-              </label>
-              <div className="flex items-end pb-0.5">
-                {type === "series" && (
+        <div className="space-y-4">
+          {episodes.map((ep, epIndex) => (
+            <div key={epIndex} className="rounded-xl border border-line/70 bg-night-800/50 p-3">
+              {/* Episode meta */}
+              <div className="grid gap-3 md:grid-cols-[80px_1fr_100px_44px]">
+                <label className="block">
+                  <span className={labelClass}>Tập</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={ep.number}
+                    onChange={(e) => updateEpisode(epIndex, { number: Number(e.target.value) })}
+                    className={inputClass}
+                    disabled={type === "single"}
+                  />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Tiêu đề tập</span>
+                  <input
+                    value={ep.title}
+                    onChange={(e) => updateEpisode(epIndex, { title: e.target.value })}
+                    placeholder={type === "series" ? `Tập ${ep.number}` : "Bản Full"}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Phút</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={ep.duration || ""}
+                    onChange={(e) => updateEpisode(epIndex, { duration: Number(e.target.value) })}
+                    className={inputClass}
+                  />
+                </label>
+                <div className="flex items-end pb-0.5">
+                  {type === "series" && (
+                    <button
+                      type="button"
+                      onClick={() => removeEpisode(epIndex)}
+                      disabled={episodes.length <= 1}
+                      aria-label={`Xóa tập ${ep.number}`}
+                      className="grid size-10 place-items-center rounded-lg border border-line text-dim transition-colors hover:border-neon/60 hover:text-neon disabled:opacity-40"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Per-resolution sources */}
+              <div className="mt-3 space-y-2 border-t border-line/60 pt-3">
+                {ep.sources.map((source, srcIndex) => (
+                  <div
+                    key={srcIndex}
+                    className="grid gap-2 md:grid-cols-[110px_90px_1fr_1fr_40px]"
+                  >
+                    <label className="block">
+                      <span className={labelClass}>Độ phân giải</span>
+                      <select
+                        value={source.resolution}
+                        onChange={(e) =>
+                          updateSource(epIndex, srcIndex, {
+                            resolution: e.target.value as AdminSourceInput["resolution"],
+                          })
+                        }
+                        className={inputClass}
+                      >
+                        {RESOLUTIONS.map((r) => (
+                          <option key={r.value} value={r.value}>
+                            {r.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className={labelClass}>Định dạng</span>
+                      <select
+                        value={source.sourceType}
+                        onChange={(e) =>
+                          updateSource(epIndex, srcIndex, {
+                            sourceType: e.target.value as "mp4" | "hls",
+                          })
+                        }
+                        className={inputClass}
+                      >
+                        <option value="mp4">MP4</option>
+                        <option value="hls">HLS</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className={labelClass}>OneDrive path</span>
+                      <input
+                        value={source.oneDrivePath ?? ""}
+                        onChange={(e) =>
+                          updateSource(epIndex, srcIndex, { oneDrivePath: e.target.value || null })
+                        }
+                        placeholder="Movies/ten-phim/2160p/e01.mp4"
+                        className={cn(inputClass, "font-mono text-xs")}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className={labelClass}>URL dự phòng</span>
+                      <input
+                        value={source.fallbackUrl ?? ""}
+                        onChange={(e) =>
+                          updateSource(epIndex, srcIndex, { fallbackUrl: e.target.value || null })
+                        }
+                        placeholder="https://..."
+                        className={cn(inputClass, "font-mono text-xs")}
+                      />
+                    </label>
+                    <div className="flex items-end pb-0.5">
+                      <button
+                        type="button"
+                        onClick={() => removeSource(epIndex, srcIndex)}
+                        disabled={ep.sources.length <= 1}
+                        aria-label="Xóa độ phân giải này"
+                        className="grid size-10 place-items-center rounded-lg border border-line text-dim transition-colors hover:border-neon/60 hover:text-neon disabled:opacity-40"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {ep.sources.length < RESOLUTIONS.length && (
                   <button
                     type="button"
-                    onClick={() => removeEpisode(index)}
-                    disabled={episodes.length <= 1}
-                    aria-label={`Xóa tập ${ep.number}`}
-                    className="grid size-10 place-items-center rounded-lg border border-line text-dim transition-colors hover:border-neon/60 hover:text-neon disabled:opacity-40"
+                    onClick={() => addSource(epIndex)}
+                    className="flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-dim transition-colors hover:border-gold/50 hover:text-gold"
                   >
-                    <Trash2 className="size-4" />
+                    <Plus className="size-3.5" /> Thêm độ phân giải
                   </button>
                 )}
               </div>
@@ -349,9 +440,9 @@ export function MovieForm({ initial }: MovieFormProps) {
           ))}
         </div>
         <p className="mt-3 text-xs text-dim">
-          Mỗi tập cần <span className="text-ink">OneDrive path</span> (ưu tiên) hoặc{" "}
-          <span className="text-ink">URL dự phòng</span>. Khi OneDrive được cấu hình, hệ thống tự
-          stream từ OneDrive.
+          Mỗi tập có thể có nhiều độ phân giải (4K / 1080p / 720p / 360p) — người xem chọn trong
+          trình phát. Mỗi độ phân giải cần <span className="text-ink">OneDrive path</span> (ưu
+          tiên) hoặc <span className="text-ink">URL dự phòng</span>.
         </p>
       </section>
 

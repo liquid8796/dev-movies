@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { CATALOG } from "@/data/catalog";
-import { PAGE_SIZE, GENRES } from "@/lib/constants";
+import { PAGE_SIZE, GENRES, RESOLUTION_ORDER } from "@/lib/constants";
 import type {
   CollectionEntry,
   CollectionStatus,
@@ -12,6 +12,7 @@ import type {
   MovieDetail,
   MovieType,
   Paginated,
+  Resolution,
   WatchProgress,
 } from "@/types";
 import type {
@@ -31,10 +32,22 @@ import type {
  * implementation for tests. State is process-local and resets on restart.
  */
 
-interface MemoryEpisode extends Episode {
+interface MemorySource {
+  resolution: Resolution;
+  sourceType: "mp4" | "hls";
   oneDriveItemId: string | null;
   oneDrivePath: string | null;
   fallbackUrl: string | null;
+}
+
+interface MemoryEpisode {
+  id: string;
+  movieId: string;
+  season: number;
+  number: number;
+  title: string;
+  duration: number;
+  sources: MemorySource[];
 }
 
 interface MemoryMovie extends Movie {
@@ -46,6 +59,27 @@ interface MemoryState {
   users: UserRecord[];
   collections: Map<string, { status: CollectionStatus; updatedAt: string }>;
   progress: Map<string, WatchProgress>;
+}
+
+function sortSources<T extends { resolution: Resolution }>(sources: T[]): T[] {
+  return [...sources].sort(
+    (a, b) => RESOLUTION_ORDER.indexOf(a.resolution) - RESOLUTION_ORDER.indexOf(b.resolution),
+  );
+}
+
+function toPublicEpisode(ep: MemoryEpisode): Episode {
+  return {
+    id: ep.id,
+    movieId: ep.movieId,
+    season: ep.season,
+    number: ep.number,
+    title: ep.title,
+    duration: ep.duration,
+    sources: sortSources(ep.sources).map((s) => ({
+      resolution: s.resolution,
+      sourceType: s.sourceType,
+    })),
+  };
 }
 
 /** Deterministic UUID from a seed string so ids survive dev-server reloads. */
@@ -74,10 +108,13 @@ function buildState(): MemoryState {
       number: ep.number,
       title: ep.title,
       duration: ep.duration,
-      sourceType: ep.sourceType,
-      oneDriveItemId: null,
-      oneDrivePath: ep.oneDrivePath ?? null,
-      fallbackUrl: ep.fallbackUrl,
+      sources: ep.sources.map((source) => ({
+        resolution: source.resolution,
+        sourceType: source.sourceType,
+        oneDriveItemId: null,
+        oneDrivePath: source.oneDrivePath ?? null,
+        fallbackUrl: source.fallbackUrl ?? null,
+      })),
     }));
     return {
       id: movieId,
@@ -182,10 +219,7 @@ class MemoryMovieRepository implements MovieRepository {
   async bySlug(slug: string): Promise<MovieDetail | null> {
     const found = state().movies.find((m) => m.slug === slug);
     if (!found) return null;
-    return {
-      ...stripEpisodes(found),
-      episodes: found.episodes.map(({ oneDriveItemId: _a, oneDrivePath: _b, fallbackUrl: _c, ...ep }) => ep),
-    };
+    return { ...stripEpisodes(found), episodes: found.episodes.map(toPublicEpisode) };
   }
 
   async byIds(ids: string[]): Promise<Movie[]> {
@@ -219,10 +253,7 @@ class MemoryMovieRepository implements MovieRepository {
   async episodeById(episodeId: string): Promise<{ episode: Episode; movie: Movie } | null> {
     for (const movie of state().movies) {
       const ep = movie.episodes.find((e) => e.id === episodeId);
-      if (ep) {
-        const { oneDriveItemId: _a, oneDrivePath: _b, fallbackUrl: _c, ...episode } = ep;
-        return { episode, movie: stripEpisodes(movie) };
-      }
+      if (ep) return { episode: toPublicEpisode(ep), movie: stripEpisodes(movie) };
     }
     return null;
   }
@@ -232,20 +263,12 @@ class MemoryMovieRepository implements MovieRepository {
     if (movie) movie.views += 1;
   }
 
-  async episodeSource(episodeId: string) {
+  async episodeSources(episodeId: string) {
     for (const movie of state().movies) {
       const ep = movie.episodes.find((e) => e.id === episodeId);
-      if (ep) {
-        return {
-          id: ep.id,
-          sourceType: ep.sourceType,
-          oneDriveItemId: ep.oneDriveItemId,
-          oneDrivePath: ep.oneDrivePath,
-          fallbackUrl: ep.fallbackUrl,
-        };
-      }
+      if (ep) return sortSources(ep.sources);
     }
-    return null;
+    return [];
   }
 
   // --- Admin CRUD ---
@@ -259,18 +282,18 @@ class MemoryMovieRepository implements MovieRepository {
     const found = state().movies.find((m) => m.id === id);
     if (!found) return null;
     return {
-      movie: {
-        ...stripEpisodes(found),
-        episodes: found.episodes.map(({ oneDriveItemId: _a, oneDrivePath: _b, fallbackUrl: _c, ...ep }) => ep),
-      },
+      movie: { ...stripEpisodes(found), episodes: found.episodes.map(toPublicEpisode) },
       episodes: found.episodes.map((ep) => ({
         season: ep.season,
         number: ep.number,
         title: ep.title,
         duration: ep.duration,
-        sourceType: ep.sourceType,
-        oneDrivePath: ep.oneDrivePath,
-        fallbackUrl: ep.fallbackUrl,
+        sources: sortSources(ep.sources).map((s) => ({
+          resolution: s.resolution,
+          sourceType: s.sourceType,
+          oneDrivePath: s.oneDrivePath,
+          fallbackUrl: s.fallbackUrl,
+        })),
       })),
     };
   }
@@ -293,7 +316,7 @@ class MemoryMovieRepository implements MovieRepository {
     movie.genres = input.genres.map((slug) => ({ slug, name: genreMap.get(slug) ?? slug }));
 
     // Sync episodes by (season, number) so ids — and viewers' watch progress —
-    // survive edits of existing episodes.
+    // survive edits of existing episodes. Sources are replaced wholesale.
     const existing = new Map(movie.episodes.map((ep) => [`${ep.season}:${ep.number}`, ep]));
     movie.episodes = input.episodes.map((ep) => {
       const match = existing.get(`${ep.season}:${ep.number}`);
@@ -304,10 +327,13 @@ class MemoryMovieRepository implements MovieRepository {
         number: ep.number,
         title: ep.title,
         duration: ep.duration,
-        sourceType: ep.sourceType,
-        oneDriveItemId: match?.oneDriveItemId ?? null,
-        oneDrivePath: ep.oneDrivePath,
-        fallbackUrl: ep.fallbackUrl,
+        sources: ep.sources.map((source) => ({
+          resolution: source.resolution,
+          sourceType: source.sourceType,
+          oneDriveItemId: null,
+          oneDrivePath: source.oneDrivePath,
+          fallbackUrl: source.fallbackUrl,
+        })),
       };
     });
     movie.episodeCount = movie.episodes.length;

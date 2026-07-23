@@ -84,16 +84,29 @@ export const episodes = pgTable(
     number: integer("number").notNull(),
     title: text("title").notNull().default(""),
     duration: integer("duration").notNull().default(0),
-    sourceType: text("source_type", { enum: ["mp4", "hls"] }).notNull().default("mp4"),
-    /** OneDrive item id — preferred lookup when present. */
-    oneDriveItemId: text("onedrive_item_id"),
-    /** Path of the file inside the drive, e.g. "Movies/silo/e01.mp4". */
-    oneDrivePath: text("onedrive_path"),
-    /** Public demo/backup URL used when OneDrive is not configured. */
-    fallbackUrl: text("fallback_url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("episodes_movie_idx").on(t.movieId)],
+);
+
+/** One playable variant of an episode per resolution (4K/1080p/720p/360p). */
+export const episodeSources = pgTable(
+  "episode_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    episodeId: uuid("episode_id")
+      .notNull()
+      .references(() => episodes.id, { onDelete: "cascade" }),
+    resolution: text("resolution", { enum: ["2160p", "1080p", "720p", "360p"] }).notNull(),
+    sourceType: text("source_type", { enum: ["mp4", "hls"] }).notNull().default("mp4"),
+    /** OneDrive item id — preferred lookup when present. */
+    oneDriveItemId: text("onedrive_item_id"),
+    /** Path of the file inside the drive, e.g. "Movies/silo/2160p/e01.mp4". */
+    oneDrivePath: text("onedrive_path"),
+    /** Public demo/backup URL used when OneDrive is not configured. */
+    fallbackUrl: text("fallback_url"),
+  },
+  (t) => [uniqueIndex("episode_sources_ep_res_idx").on(t.episodeId, t.resolution)],
 );
 
 export const collections = pgTable(

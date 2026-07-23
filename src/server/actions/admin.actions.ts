@@ -8,11 +8,28 @@ import {
   deleteMovie,
   saveMovie,
 } from "@/server/services/admin.service";
-import type { AdminEpisodeInput, AdminMovieInput } from "@/server/repositories/types";
-import type { MovieType } from "@/types";
+import type {
+  AdminEpisodeInput,
+  AdminMovieInput,
+  AdminSourceInput,
+} from "@/server/repositories/types";
+import type { MovieType, Resolution } from "@/types";
 
 export interface AdminActionState {
   error?: string;
+}
+
+function parseSources(raw: unknown): AdminSourceInput[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => {
+    const source = (entry ?? {}) as Record<string, unknown>;
+    return {
+      resolution: String(source.resolution ?? "") as Resolution,
+      sourceType: source.sourceType === "hls" ? "hls" : "mp4",
+      oneDrivePath: typeof source.oneDrivePath === "string" ? source.oneDrivePath : null,
+      fallbackUrl: typeof source.fallbackUrl === "string" ? source.fallbackUrl : null,
+    };
+  });
 }
 
 function parseEpisodes(json: string): AdminEpisodeInput[] {
@@ -30,9 +47,7 @@ function parseEpisodes(json: string): AdminEpisodeInput[] {
       number: Number(ep.number) || 0,
       title: typeof ep.title === "string" ? ep.title : "",
       duration: Number(ep.duration) || 0,
-      sourceType: ep.sourceType === "hls" ? "hls" : "mp4",
-      oneDrivePath: typeof ep.oneDrivePath === "string" ? ep.oneDrivePath : null,
-      fallbackUrl: typeof ep.fallbackUrl === "string" ? ep.fallbackUrl : null,
+      sources: parseSources(ep.sources),
     };
   });
 }

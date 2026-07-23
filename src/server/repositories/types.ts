@@ -8,6 +8,7 @@ import type {
   MovieDetail,
   MovieType,
   Paginated,
+  Resolution,
   WatchProgress,
 } from "@/types";
 
@@ -28,15 +29,21 @@ export interface UserRecord {
   createdAt: string;
 }
 
+/** One quality variant of an episode for admin create/update. */
+export interface AdminSourceInput {
+  resolution: Resolution;
+  sourceType: "mp4" | "hls";
+  oneDrivePath: string | null;
+  fallbackUrl: string | null;
+}
+
 /** Episode payload for admin create/update. */
 export interface AdminEpisodeInput {
   season: number;
   number: number;
   title: string;
   duration: number;
-  sourceType: "mp4" | "hls";
-  oneDrivePath: string | null;
-  fallbackUrl: string | null;
+  sources: AdminSourceInput[];
 }
 
 /** Movie payload for admin create/update. */
@@ -74,14 +81,16 @@ export interface MovieRepository {
   search(query: string, limit: number): Promise<Movie[]>;
   episodeById(episodeId: string): Promise<{ episode: Episode; movie: Movie } | null>;
   incrementViews(movieId: string): Promise<void>;
-  /** Raw source info needed by the streaming service. */
-  episodeSource(episodeId: string): Promise<{
-    id: string;
-    sourceType: "mp4" | "hls";
-    oneDriveItemId: string | null;
-    oneDrivePath: string | null;
-    fallbackUrl: string | null;
-  } | null>;
+  /** Raw per-resolution source info needed by the streaming service. */
+  episodeSources(episodeId: string): Promise<
+    {
+      resolution: Resolution;
+      sourceType: "mp4" | "hls";
+      oneDriveItemId: string | null;
+      oneDrivePath: string | null;
+      fallbackUrl: string | null;
+    }[]
+  >;
   // --- Admin CRUD ---
   byId(id: string): Promise<Movie | null>;
   adminDetail(id: string): Promise<AdminMovieDetail | null>;

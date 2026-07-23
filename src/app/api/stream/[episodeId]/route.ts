@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { isResolution } from "@/lib/constants";
 import { resolveStream } from "@/server/services/stream.service";
 
 /**
- * GET /api/stream/:episodeId
+ * GET /api/stream/:episodeId[?res=2160p|1080p|720p|360p]
  *
- * Resolves the episode to a playable URL and 302-redirects the player to it.
- * For OneDrive sources this points at Microsoft's CDN (pre-authenticated,
- * Range-capable), so 4K bytes never pass through this function — it only does
- * a cache lookup and a redirect.
+ * Resolves the episode (at the requested resolution, defaulting to the best
+ * available) to a playable URL. For OneDrive sources this points at
+ * Microsoft's CDN (pre-authenticated, Range-capable), so video bytes never
+ * pass through this function — it only does a cache lookup.
  *
  * Set STREAM_REQUIRE_AUTH=1 to restrict playback to signed-in users
  * (recommended in production to prevent hotlinking).
@@ -25,7 +26,9 @@ export async function GET(
   }
 
   const { episodeId } = await params;
-  const source = await resolveStream(episodeId);
+  const searchParams = new URL(req.url).searchParams;
+  const res = searchParams.get("res") ?? "";
+  const source = await resolveStream(episodeId, isResolution(res) ? res : undefined);
   if (!source) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
   }
@@ -34,10 +37,17 @@ export async function GET(
   const noStore = { "Cache-Control": "private, no-store" };
 
   // format=json: the in-app player plays the CDN URL directly, so seeks and
-  // buffering never invoke this function again during the session.
-  if (new URL(req.url).searchParams.get("format") === "json") {
+  // buffering never invoke this function again during the session. The
+  // response also lists every variant for the player's quality menu.
+  if (searchParams.get("format") === "json") {
     return NextResponse.json(
-      { url: source.url, type: source.type, origin: source.origin },
+      {
+        url: source.url,
+        type: source.type,
+        origin: source.origin,
+        resolution: source.resolution,
+        available: source.available,
+      },
       { headers: noStore },
     );
   }

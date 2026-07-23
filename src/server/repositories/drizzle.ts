@@ -25,7 +25,7 @@ import type {
   Paginated,
   WatchProgress,
 } from "@/types";
-import { PAGE_SIZE } from "@/lib/constants";
+import { PAGE_SIZE, RESOLUTION_ORDER } from "@/lib/constants";
 import type {
   AdminMovieDetail,
   AdminMovieInput,
@@ -39,7 +39,14 @@ import type {
 
 type MovieRow = typeof schema.movies.$inferSelect;
 type EpisodeRow = typeof schema.episodes.$inferSelect;
+type SourceRow = typeof schema.episodeSources.$inferSelect;
 type UserRow = typeof schema.users.$inferSelect;
+
+function sortSourceRows<T extends { resolution: SourceRow["resolution"] }>(rows: T[]): T[] {
+  return [...rows].sort(
+    (a, b) => RESOLUTION_ORDER.indexOf(a.resolution) - RESOLUTION_ORDER.indexOf(b.resolution),
+  );
+}
 
 function toUserRecord(row: UserRow): UserRecord {
   return {
@@ -54,7 +61,7 @@ function toUserRecord(row: UserRow): UserRecord {
   };
 }
 
-function toEpisode(row: EpisodeRow): Episode {
+function toEpisode(row: EpisodeRow, sources: SourceRow[]): Episode {
   return {
     id: row.id,
     movieId: row.movieId,
@@ -62,7 +69,10 @@ function toEpisode(row: EpisodeRow): Episode {
     number: row.number,
     title: row.title,
     duration: row.duration,
-    sourceType: row.sourceType,
+    sources: sortSourceRows(sources).map((s) => ({
+      resolution: s.resolution,
+      sourceType: s.sourceType,
+    })),
   };
 }
 
@@ -208,6 +218,22 @@ class DrizzleMovieRepository implements MovieRepository {
     return this.hydrate(rows);
   }
 
+  /** Fetch and group per-resolution sources for a set of episodes. */
+  private async sourcesFor(episodeIds: string[]): Promise<Map<string, SourceRow[]>> {
+    const map = new Map<string, SourceRow[]>();
+    if (episodeIds.length === 0) return map;
+    const rows = await this.db
+      .select()
+      .from(schema.episodeSources)
+      .where(inArray(schema.episodeSources.episodeId, episodeIds));
+    for (const row of rows) {
+      const arr = map.get(row.episodeId) ?? [];
+      arr.push(row);
+      map.set(row.episodeId, arr);
+    }
+    return map;
+  }
+
   async bySlug(slug: string): Promise<MovieDetail | null> {
     const rows = await this.db
       .select()
@@ -221,7 +247,11 @@ class DrizzleMovieRepository implements MovieRepository {
       .from(schema.episodes)
       .where(eq(schema.episodes.movieId, movie.id))
       .orderBy(schema.episodes.season, schema.episodes.number);
-    return { ...movie, episodes: episodeRows.map(toEpisode) };
+    const sourceMap = await this.sourcesFor(episodeRows.map((e) => e.id));
+    return {
+      ...movie,
+      episodes: episodeRows.map((row) => toEpisode(row, sourceMap.get(row.id) ?? [])),
+    };
   }
 
   async byIds(ids: string[]): Promise<Movie[]> {
@@ -274,8 +304,11 @@ class DrizzleMovieRepository implements MovieRepository {
       .where(eq(schema.episodes.id, episodeId))
       .limit(1);
     if (rows.length === 0) return null;
-    const [movie] = await this.hydrate([rows[0].movies]);
-    return { episode: toEpisode(rows[0].episodes), movie };
+    const [[movie], sourceMap] = await Promise.all([
+      this.hydrate([rows[0].movies]),
+      this.sourcesFor([episodeId]),
+    ]);
+    return { episode: toEpisode(rows[0].episodes, sourceMap.get(episodeId) ?? []), movie };
   }
 
   async incrementViews(movieId: string): Promise<void> {
@@ -285,21 +318,18 @@ class DrizzleMovieRepository implements MovieRepository {
       .where(eq(schema.movies.id, movieId));
   }
 
-  async episodeSource(episodeId: string) {
+  async episodeSources(episodeId: string) {
     const rows = await this.db
       .select()
-      .from(schema.episodes)
-      .where(eq(schema.episodes.id, episodeId))
-      .limit(1);
-    if (rows.length === 0) return null;
-    const row = rows[0];
-    return {
-      id: row.id,
+      .from(schema.episodeSources)
+      .where(eq(schema.episodeSources.episodeId, episodeId));
+    return sortSourceRows(rows).map((row) => ({
+      resolution: row.resolution,
       sourceType: row.sourceType,
       oneDriveItemId: row.oneDriveItemId,
       oneDrivePath: row.oneDrivePath,
       fallbackUrl: row.fallbackUrl,
-    };
+    }));
   }
 
   // --- Admin CRUD ---
@@ -328,16 +358,23 @@ class DrizzleMovieRepository implements MovieRepository {
       .from(schema.episodes)
       .where(eq(schema.episodes.movieId, id))
       .orderBy(schema.episodes.season, schema.episodes.number);
+    const sourceMap = await this.sourcesFor(episodeRows.map((e) => e.id));
     return {
-      movie: { ...movie, episodes: episodeRows.map(toEpisode) },
+      movie: {
+        ...movie,
+        episodes: episodeRows.map((row) => toEpisode(row, sourceMap.get(row.id) ?? [])),
+      },
       episodes: episodeRows.map((row) => ({
         season: row.season,
         number: row.number,
         title: row.title,
         duration: row.duration,
-        sourceType: row.sourceType,
-        oneDrivePath: row.oneDrivePath,
-        fallbackUrl: row.fallbackUrl,
+        sources: sortSourceRows(sourceMap.get(row.id) ?? []).map((s) => ({
+          resolution: s.resolution,
+          sourceType: s.sourceType,
+          oneDrivePath: s.oneDrivePath,
+          fallbackUrl: s.fallbackUrl,
+        })),
       })),
     };
   }
@@ -386,15 +423,31 @@ class DrizzleMovieRepository implements MovieRepository {
         number: ep.number,
         title: ep.title,
         duration: ep.duration,
-        sourceType: ep.sourceType,
-        oneDrivePath: ep.oneDrivePath,
-        fallbackUrl: ep.fallbackUrl,
       };
+      let episodeId: string;
       if (match) {
-        keep.add(match.id);
-        await this.db.update(schema.episodes).set(values).where(eq(schema.episodes.id, match.id));
+        episodeId = match.id;
+        keep.add(episodeId);
+        await this.db.update(schema.episodes).set(values).where(eq(schema.episodes.id, episodeId));
       } else {
-        await this.db.insert(schema.episodes).values({ movieId, ...values });
+        const inserted = await this.db
+          .insert(schema.episodes)
+          .values({ movieId, ...values })
+          .returning({ id: schema.episodes.id });
+        episodeId = inserted[0].id;
+      }
+      // Sources carry no user state — replace them wholesale.
+      await this.db
+        .delete(schema.episodeSources)
+        .where(eq(schema.episodeSources.episodeId, episodeId));
+      for (const source of ep.sources) {
+        await this.db.insert(schema.episodeSources).values({
+          episodeId,
+          resolution: source.resolution,
+          sourceType: source.sourceType,
+          oneDrivePath: source.oneDrivePath,
+          fallbackUrl: source.fallbackUrl,
+        });
       }
     }
     const stale = existing.filter((ep) => !keep.has(ep.id)).map((ep) => ep.id);
@@ -566,7 +619,22 @@ class DrizzleProgressRepository implements ProgressRepository {
       .orderBy(desc(schema.watchProgress.updatedAt))
       .limit(limit);
 
-    const movies = await this.movies.byIds(rows.map((r) => r.watch_progress.movieId));
+    const episodeIds = rows.map((r) => r.episodes.id);
+    const [movies, sourceRows] = await Promise.all([
+      this.movies.byIds(rows.map((r) => r.watch_progress.movieId)),
+      episodeIds.length > 0
+        ? this.db
+            .select()
+            .from(schema.episodeSources)
+            .where(inArray(schema.episodeSources.episodeId, episodeIds))
+        : Promise.resolve([] as SourceRow[]),
+    ]);
+    const sourceMap = new Map<string, SourceRow[]>();
+    for (const row of sourceRows) {
+      const arr = sourceMap.get(row.episodeId) ?? [];
+      arr.push(row);
+      sourceMap.set(row.episodeId, arr);
+    }
     const byId = new Map(movies.map((m) => [m.id, m]));
     return rows
       .filter((r) => byId.has(r.watch_progress.movieId))
@@ -577,7 +645,7 @@ class DrizzleProgressRepository implements ProgressRepository {
         duration: r.watch_progress.duration,
         updatedAt: r.watch_progress.updatedAt.toISOString(),
         movie: byId.get(r.watch_progress.movieId)!,
-        episode: toEpisode(r.episodes),
+        episode: toEpisode(r.episodes, sourceMap.get(r.episodes.id) ?? []),
       }));
   }
 }

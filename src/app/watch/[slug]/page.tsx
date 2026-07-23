@@ -6,7 +6,7 @@ import { auth } from "@/auth";
 import { EpisodeGrid } from "@/components/movie/EpisodeGrid";
 import { MovieCarousel } from "@/components/movies/MovieCarousel";
 import { VideoPlayer } from "@/components/player/VideoPlayer";
-import { countryName } from "@/lib/constants";
+import { countryName, resolutionLabel } from "@/lib/constants";
 import { formatDuration } from "@/lib/utils";
 import { getRepositories } from "@/server/repositories";
 import { getMovieBySlug, getRelatedMovies } from "@/server/services/movie.service";
@@ -62,7 +62,6 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
           key={episode.id}
           episodeId={episode.id}
           movieId={movie.id}
-          sourceType={episode.sourceType}
           poster={movie.backdropUrl || undefined}
           title={movie.title}
           subtitle={episodeLabel || movie.originalTitle}
@@ -92,6 +91,11 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
               <span className="rounded-md bg-night-800 px-2 py-0.5 text-xs font-bold text-gold">
                 {movie.quality}
               </span>
+              {episode.sources.length > 1 && (
+                <span className="text-xs text-dim">
+                  ({episode.sources.map((s) => resolutionLabel(s.resolution)).join(" · ")})
+                </span>
+              )}
             </div>
 
             <p className="mt-4 max-w-3xl leading-relaxed text-ink/75">{movie.description}</p>

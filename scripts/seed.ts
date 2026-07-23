@@ -99,19 +99,28 @@ async function main() {
       await db.insert(schema.movieGenres).values({ movieId, genreSlug }).onConflictDoNothing();
     }
 
-    // Episodes (reset + insert keeps numbering consistent)
+    // Episodes + per-resolution sources (reset + insert keeps numbering consistent)
     await db.delete(schema.episodes).where(eq(schema.episodes.movieId, movieId));
     for (const ep of entry.episodes) {
-      await db.insert(schema.episodes).values({
-        movieId,
-        season: ep.season,
-        number: ep.number,
-        title: ep.title,
-        duration: ep.duration,
-        sourceType: ep.sourceType,
-        oneDrivePath: ep.oneDrivePath ?? null,
-        fallbackUrl: ep.fallbackUrl,
-      });
+      const inserted = await db
+        .insert(schema.episodes)
+        .values({
+          movieId,
+          season: ep.season,
+          number: ep.number,
+          title: ep.title,
+          duration: ep.duration,
+        })
+        .returning({ id: schema.episodes.id });
+      for (const source of ep.sources) {
+        await db.insert(schema.episodeSources).values({
+          episodeId: inserted[0].id,
+          resolution: source.resolution,
+          sourceType: source.sourceType,
+          oneDrivePath: source.oneDrivePath ?? null,
+          fallbackUrl: source.fallbackUrl ?? null,
+        });
+      }
     }
     console.log(`  ✓ ${entry.title}`);
   }

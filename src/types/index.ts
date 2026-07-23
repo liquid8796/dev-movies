@@ -4,6 +4,15 @@ export type MovieType = "single" | "series";
 
 export type StreamType = "mp4" | "hls";
 
+/** Playback resolutions, best first. "2160p" is displayed as "4K". */
+export type Resolution = "2160p" | "1080p" | "720p" | "360p";
+
+/** Publicly visible info about one quality variant of an episode. */
+export interface EpisodeSource {
+  resolution: Resolution;
+  sourceType: StreamType;
+}
+
 export type CollectionStatus = "watching" | "wishlist" | "watched";
 
 export interface Genre {
@@ -41,7 +50,8 @@ export interface Episode {
   number: number;
   title: string;
   duration: number;
-  sourceType: StreamType;
+  /** Available quality variants, best resolution first. */
+  sources: EpisodeSource[];
 }
 
 export interface MovieDetail extends Movie {
@@ -101,4 +111,8 @@ export interface StreamSource {
   type: StreamType;
   /** Where the bytes come from — useful for diagnostics. */
   origin: "onedrive" | "fallback";
+  /** Resolution actually being served. */
+  resolution: Resolution;
+  /** All variants the viewer can switch between. */
+  available: EpisodeSource[];
 }

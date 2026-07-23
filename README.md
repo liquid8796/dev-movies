@@ -64,7 +64,9 @@ giữa chừng sẽ được player tự resolve lại và tua về đúng vị 
 
 - Trang chủ: hero banner xoay vòng, bộ lọc (loại/thể loại/quốc gia/năm/thời lượng/sắp xếp), carousel Phim Đề Cử / Phim Lẻ Mới / Phim Bộ Mới / Xem Nhiều / Đánh Giá Cao
 - Trang chi tiết + danh sách tập, phim liên quan
-- Player tùy biến: tua nhanh, âm lượng, tốc độ phát, PiP, fullscreen, phím tắt, HLS (hls.js), tự lưu & khôi phục tiến độ xem
+- Player tùy biến: chọn chất lượng 4K/1080p/720p/360p (giữ nguyên vị trí đang xem khi
+  đổi), tua nhanh, âm lượng, tốc độ phát, PiP, fullscreen, phím tắt, HLS (hls.js),
+  tự lưu & khôi phục tiến độ xem
 - Tìm kiếm live (debounce) + trang kết quả
 - Danh sách của tôi: Cập Nhật (đang xem dở kèm progress) / Đang Xem / Mong Muốn / Đã Xem
 - Tài khoản: đổi tên/email/mật khẩu, số dư, mã mời bạn bè

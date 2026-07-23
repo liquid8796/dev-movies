@@ -28,6 +28,42 @@ export interface UserRecord {
   createdAt: string;
 }
 
+/** Episode payload for admin create/update. */
+export interface AdminEpisodeInput {
+  season: number;
+  number: number;
+  title: string;
+  duration: number;
+  sourceType: "mp4" | "hls";
+  oneDrivePath: string | null;
+  fallbackUrl: string | null;
+}
+
+/** Movie payload for admin create/update. */
+export interface AdminMovieInput {
+  slug: string;
+  title: string;
+  originalTitle: string;
+  description: string;
+  type: MovieType;
+  posterUrl: string;
+  backdropUrl: string;
+  year: number;
+  duration: number;
+  country: string;
+  quality: string;
+  rating: number;
+  featured: boolean;
+  genres: string[];
+  episodes: AdminEpisodeInput[];
+}
+
+/** Admin edit view: movie detail + raw episode sources. */
+export interface AdminMovieDetail {
+  movie: MovieDetail;
+  episodes: AdminEpisodeInput[];
+}
+
 export interface MovieRepository {
   list(params: ListParams): Promise<Paginated<Movie>>;
   featured(limit: number): Promise<Movie[]>;
@@ -46,6 +82,12 @@ export interface MovieRepository {
     oneDrivePath: string | null;
     fallbackUrl: string | null;
   } | null>;
+  // --- Admin CRUD ---
+  byId(id: string): Promise<Movie | null>;
+  adminDetail(id: string): Promise<AdminMovieDetail | null>;
+  create(input: AdminMovieInput): Promise<Movie>;
+  update(id: string, input: AdminMovieInput): Promise<void>;
+  remove(id: string): Promise<void>;
 }
 
 export interface UserRepository {

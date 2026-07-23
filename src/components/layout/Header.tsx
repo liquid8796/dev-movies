@@ -17,7 +17,7 @@ const NAV_LINKS = [
 ];
 
 interface HeaderProps {
-  user: { name: string; email: string } | null;
+  user: { name: string; email: string; isAdmin: boolean } | null;
 }
 
 export function Header({ user }: HeaderProps) {

@@ -142,7 +142,17 @@ async function main() {
       .toFile(path.join(backdropDir, `${movie.slug}.jpg`));
     console.log(`✓ ${movie.slug}`);
   }
-  console.log(`\nDone: ${CATALOG.length} posters + backdrops in /public.`);
+
+  // Generic fallback artwork for admin-created movies without images yet.
+  await sharp(Buffer.from(posterSvg("PhimVerse", new Date().getFullYear(), "HD", "_placeholder")))
+    .jpeg({ quality: 85 })
+    .toFile(path.join(posterDir, "_placeholder.jpg"));
+  await sharp(Buffer.from(backdropSvg("PhimVerse", "_placeholder")))
+    .jpeg({ quality: 82 })
+    .toFile(path.join(backdropDir, "_placeholder.jpg"));
+  console.log("✓ _placeholder");
+
+  console.log(`\nDone: ${CATALOG.length + 1} posters + backdrops in /public.`);
 }
 
 main().catch((err) => {

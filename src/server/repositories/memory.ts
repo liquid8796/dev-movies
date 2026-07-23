@@ -15,6 +15,8 @@ import type {
   WatchProgress,
 } from "@/types";
 import type {
+  AdminMovieDetail,
+  AdminMovieInput,
   CollectionRepository,
   MovieRepository,
   ProgressRepository,
@@ -244,6 +246,116 @@ class MemoryMovieRepository implements MovieRepository {
       }
     }
     return null;
+  }
+
+  // --- Admin CRUD ---
+
+  async byId(id: string): Promise<Movie | null> {
+    const found = state().movies.find((m) => m.id === id);
+    return found ? stripEpisodes(found) : null;
+  }
+
+  async adminDetail(id: string): Promise<AdminMovieDetail | null> {
+    const found = state().movies.find((m) => m.id === id);
+    if (!found) return null;
+    return {
+      movie: {
+        ...stripEpisodes(found),
+        episodes: found.episodes.map(({ oneDriveItemId: _a, oneDrivePath: _b, fallbackUrl: _c, ...ep }) => ep),
+      },
+      episodes: found.episodes.map((ep) => ({
+        season: ep.season,
+        number: ep.number,
+        title: ep.title,
+        duration: ep.duration,
+        sourceType: ep.sourceType,
+        oneDrivePath: ep.oneDrivePath,
+        fallbackUrl: ep.fallbackUrl,
+      })),
+    };
+  }
+
+  private applyInput(movie: MemoryMovie, input: AdminMovieInput): void {
+    const genreMap = new Map(GENRES.map((g) => [g.slug, g.name]));
+    movie.slug = input.slug;
+    movie.title = input.title;
+    movie.originalTitle = input.originalTitle;
+    movie.description = input.description;
+    movie.type = input.type;
+    movie.posterUrl = input.posterUrl;
+    movie.backdropUrl = input.backdropUrl;
+    movie.year = input.year;
+    movie.duration = input.duration;
+    movie.country = input.country;
+    movie.quality = input.quality as Movie["quality"];
+    movie.rating = input.rating;
+    movie.featured = input.featured;
+    movie.genres = input.genres.map((slug) => ({ slug, name: genreMap.get(slug) ?? slug }));
+
+    // Sync episodes by (season, number) so ids — and viewers' watch progress —
+    // survive edits of existing episodes.
+    const existing = new Map(movie.episodes.map((ep) => [`${ep.season}:${ep.number}`, ep]));
+    movie.episodes = input.episodes.map((ep) => {
+      const match = existing.get(`${ep.season}:${ep.number}`);
+      return {
+        id: match?.id ?? randomUUID(),
+        movieId: movie.id,
+        season: ep.season,
+        number: ep.number,
+        title: ep.title,
+        duration: ep.duration,
+        sourceType: ep.sourceType,
+        oneDriveItemId: match?.oneDriveItemId ?? null,
+        oneDrivePath: ep.oneDrivePath,
+        fallbackUrl: ep.fallbackUrl,
+      };
+    });
+    movie.episodeCount = movie.episodes.length;
+  }
+
+  async create(input: AdminMovieInput): Promise<Movie> {
+    const movie: MemoryMovie = {
+      id: randomUUID(),
+      slug: input.slug,
+      title: input.title,
+      originalTitle: input.originalTitle,
+      description: input.description,
+      type: input.type,
+      posterUrl: input.posterUrl,
+      backdropUrl: input.backdropUrl,
+      year: input.year,
+      duration: input.duration,
+      country: input.country,
+      quality: input.quality as Movie["quality"],
+      rating: input.rating,
+      views: 0,
+      featured: input.featured,
+      genres: [],
+      episodeCount: 0,
+      createdAt: new Date().toISOString(),
+      episodes: [],
+    };
+    this.applyInput(movie, input);
+    state().movies.unshift(movie);
+    return stripEpisodes(movie);
+  }
+
+  async update(id: string, input: AdminMovieInput): Promise<void> {
+    const movie = state().movies.find((m) => m.id === id);
+    if (!movie) throw new Error(`Movie ${id} not found`);
+    this.applyInput(movie, input);
+    movie.createdAt = new Date().toISOString(); // bump "updated" ordering in demo mode
+  }
+
+  async remove(id: string): Promise<void> {
+    const s = state();
+    s.movies = s.movies.filter((m) => m.id !== id);
+    for (const key of [...s.collections.keys()]) {
+      if (key.endsWith(`:${id}`)) s.collections.delete(key);
+    }
+    for (const [key, value] of [...s.progress.entries()]) {
+      if (value.movieId === id) s.progress.delete(key);
+    }
   }
 }
 

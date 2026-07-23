@@ -69,3 +69,6 @@ giữa chừng sẽ được player tự resolve lại và tua về đúng vị 
 - Danh sách của tôi: Cập Nhật (đang xem dở kèm progress) / Đang Xem / Mong Muốn / Đã Xem
 - Tài khoản: đổi tên/email/mật khẩu, số dư, mã mời bạn bè
 - Trending theo tuần (Redis sorted set), đăng ký/đăng nhập (Auth.js v5)
+- Khu vực quản trị `/admin` (đăng nhập riêng tại `/admin/login`, quyền theo
+  `ADMIN_EMAILS`): thêm/sửa/xóa/tìm kiếm phim, quản lý tập + nguồn OneDrive,
+  tự vô hiệu cache sau mỗi thay đổi

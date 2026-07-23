@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Be_Vietnam_Pro, Pacifico } from "next/font/google";
 import { auth } from "@/auth";
+import { isAdminEmail } from "@/server/admin";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { SITE_NAME, SITE_TAGLINE } from "@/lib/constants";
@@ -38,7 +39,11 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const session = await auth();
   const user = session?.user
-    ? { name: session.user.name ?? "", email: session.user.email ?? "" }
+    ? {
+        name: session.user.name ?? "",
+        email: session.user.email ?? "",
+        isAdmin: isAdminEmail(session.user.email),
+      }
     : null;
 
   return (

@@ -1,25 +1,16 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { currentAdmin } from "@/server/admin";
 import { isBlobConfigured, uploadImage } from "@/server/storage/blob";
 
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 const MAX_SIZE = 8 * 1024 * 1024;
-
-function isAdmin(email: string | null | undefined): boolean {
-  const admins = (process.env.ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  return Boolean(email && admins.includes(email.toLowerCase()));
-}
 
 /**
  * POST /api/upload — admin-only poster/backdrop upload into Vercel Blob.
  * multipart/form-data: file=<image>, kind=posters|backdrops, name=<slug>
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!isAdmin(session?.user?.email)) {
+  if (!(await currentAdmin())) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   if (!isBlobConfigured()) {

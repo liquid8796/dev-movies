@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ListChecks, LogOut, Settings } from "lucide-react";
+import { ListChecks, LogOut, Settings, ShieldCheck } from "lucide-react";
 import { signOutAction } from "@/server/actions/auth.actions";
 
 interface UserMenuProps {
-  user: { name: string; email: string };
+  user: { name: string; email: string; isAdmin: boolean };
 }
 
 function initials(name: string): string {
@@ -68,6 +68,15 @@ export function UserMenu({ user }: UserMenuProps) {
             >
               <ListChecks className="size-4.5 text-dim" /> Danh sách của tôi
             </Link>
+            {user.isAdmin && (
+              <Link
+                href="/admin"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-gold transition-colors hover:bg-gold/10"
+              >
+                <ShieldCheck className="size-4.5" /> Quản trị
+              </Link>
+            )}
             <form action={signOutAction}>
               <button
                 type="submit"

@@ -42,3 +42,14 @@ export function formatMoney(amount: number): string {
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+/** URL-safe slug from a (Vietnamese) title: "Phàm Nhân Tu Tiên" → "pham-nhan-tu-tien". */
+export function slugify(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // strips combining diacritics (U+0300–U+036F)
+    .replace(/[đĐ]/g, "d")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}

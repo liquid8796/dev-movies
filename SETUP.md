@@ -151,4 +151,16 @@ vercel env add STREAM_REQUIRE_AUTH production   # nên đặt = 1
 | `MS_CLIENT_ID/SECRET/REFRESH_TOKEN` | Khi stream OneDrive cá nhân | Chế độ A |
 | `MS_TENANT_ID`, `ONEDRIVE_DRIVE_ID` | Khi stream OneDrive Business | Chế độ B |
 | `STREAM_REQUIRE_AUTH` | Nên = `1` ở production | Chặn hotlink stream |
-| `ADMIN_EMAILS` | Khi dùng /api/upload | Danh sách email, phân cách bằng dấu phẩy |
+| `ADMIN_EMAILS` | Cho khu vực quản trị | Danh sách email admin, phân cách bằng dấu phẩy |
+
+## 6. Khu vực quản trị (/admin)
+
+- Đăng nhập quản trị tại **`/admin/login`** (hoặc menu avatar → **Quản trị** khi đã là admin).
+- Quyền admin xác định bằng biến `ADMIN_EMAILS` (ví dụ: `ADMIN_EMAILS=ban@email.com,vo@email.com`).
+  Tài khoản phải tồn tại (đăng ký như người dùng thường) — `ADMIN_EMAILS` chỉ cấp quyền.
+- **Chế độ demo** (chưa có `DATABASE_URL` và chưa đặt `ADMIN_EMAILS`): tài khoản
+  `demo@phimverse.dev` / `demo1234` tự động là admin để bạn thử ngay.
+- Chức năng: tìm kiếm phim, **Thêm phim** (`/admin/movies/new`), **Sửa** (bút chì),
+  **Xóa** (thùng rác, có xác nhận). Form hỗ trợ: slug tự sinh từ tên tiếng Việt,
+  thể loại, poster/backdrop URL, danh sách tập với OneDrive path + URL dự phòng
+  cho từng tập. Lưu xong cache tự vô hiệu — trang chủ cập nhật ngay.

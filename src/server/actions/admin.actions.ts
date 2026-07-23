@@ -1,0 +1,91 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { currentAdmin } from "@/server/admin";
+import {
+  AdminServiceError,
+  deleteMovie,
+  saveMovie,
+} from "@/server/services/admin.service";
+import type { AdminEpisodeInput, AdminMovieInput } from "@/server/repositories/types";
+import type { MovieType } from "@/types";
+
+export interface AdminActionState {
+  error?: string;
+}
+
+function parseEpisodes(json: string): AdminEpisodeInput[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.map((raw) => {
+    const ep = (raw ?? {}) as Record<string, unknown>;
+    return {
+      season: Number(ep.season) || 1,
+      number: Number(ep.number) || 0,
+      title: typeof ep.title === "string" ? ep.title : "",
+      duration: Number(ep.duration) || 0,
+      sourceType: ep.sourceType === "hls" ? "hls" : "mp4",
+      oneDrivePath: typeof ep.oneDrivePath === "string" ? ep.oneDrivePath : null,
+      fallbackUrl: typeof ep.fallbackUrl === "string" ? ep.fallbackUrl : null,
+    };
+  });
+}
+
+function parseMovieForm(formData: FormData): AdminMovieInput {
+  const str = (key: string) => String(formData.get(key) ?? "").trim();
+  const type: MovieType = str("type") === "series" ? "series" : "single";
+  return {
+    slug: str("slug").toLowerCase(),
+    title: str("title"),
+    originalTitle: str("originalTitle"),
+    description: str("description"),
+    type,
+    posterUrl: str("posterUrl"),
+    backdropUrl: str("backdropUrl"),
+    year: Number(str("year")),
+    duration: Number(str("duration")) || 0,
+    country: str("country"),
+    quality: str("quality"),
+    rating: Number(str("rating")) || 0,
+    featured: formData.get("featured") === "on",
+    genres: formData.getAll("genres").map(String),
+    episodes: parseEpisodes(str("episodes")),
+  };
+}
+
+export async function saveMovieAction(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  if (!(await currentAdmin())) return { error: "Bạn không có quyền quản trị." };
+
+  const id = String(formData.get("id") ?? "") || null;
+  try {
+    await saveMovie(id, parseMovieForm(formData));
+  } catch (error) {
+    if (error instanceof AdminServiceError) return { error: error.message };
+    console.error("saveMovieAction failed:", error);
+    return { error: "Lưu phim thất bại, vui lòng thử lại." };
+  }
+  revalidatePath("/admin");
+  redirect(`/admin?saved=1`);
+}
+
+export async function deleteMovieAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  if (!(await currentAdmin())) return { ok: false, error: "Bạn không có quyền quản trị." };
+  try {
+    await deleteMovie(id);
+  } catch (error) {
+    if (error instanceof AdminServiceError) return { ok: false, error: error.message };
+    console.error("deleteMovieAction failed:", error);
+    return { ok: false, error: "Xóa phim thất bại." };
+  }
+  revalidatePath("/admin");
+  return { ok: true };
+}

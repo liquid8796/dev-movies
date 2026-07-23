@@ -27,6 +27,8 @@ import type {
 } from "@/types";
 import { PAGE_SIZE } from "@/lib/constants";
 import type {
+  AdminMovieDetail,
+  AdminMovieInput,
   CollectionRepository,
   MovieRepository,
   ProgressRepository,
@@ -298,6 +300,127 @@ class DrizzleMovieRepository implements MovieRepository {
       oneDrivePath: row.oneDrivePath,
       fallbackUrl: row.fallbackUrl,
     };
+  }
+
+  // --- Admin CRUD ---
+
+  async byId(id: string): Promise<Movie | null> {
+    const rows = await this.db
+      .select()
+      .from(schema.movies)
+      .where(eq(schema.movies.id, id))
+      .limit(1);
+    if (rows.length === 0) return null;
+    const [movie] = await this.hydrate(rows);
+    return movie;
+  }
+
+  async adminDetail(id: string): Promise<AdminMovieDetail | null> {
+    const rows = await this.db
+      .select()
+      .from(schema.movies)
+      .where(eq(schema.movies.id, id))
+      .limit(1);
+    if (rows.length === 0) return null;
+    const [movie] = await this.hydrate(rows);
+    const episodeRows = await this.db
+      .select()
+      .from(schema.episodes)
+      .where(eq(schema.episodes.movieId, id))
+      .orderBy(schema.episodes.season, schema.episodes.number);
+    return {
+      movie: { ...movie, episodes: episodeRows.map(toEpisode) },
+      episodes: episodeRows.map((row) => ({
+        season: row.season,
+        number: row.number,
+        title: row.title,
+        duration: row.duration,
+        sourceType: row.sourceType,
+        oneDrivePath: row.oneDrivePath,
+        fallbackUrl: row.fallbackUrl,
+      })),
+    };
+  }
+
+  private movieValues(input: AdminMovieInput) {
+    return {
+      slug: input.slug,
+      title: input.title,
+      originalTitle: input.originalTitle,
+      description: input.description,
+      type: input.type,
+      posterUrl: input.posterUrl,
+      backdropUrl: input.backdropUrl,
+      year: input.year,
+      duration: input.duration,
+      country: input.country,
+      quality: input.quality,
+      rating: input.rating,
+      featured: input.featured,
+      updatedAt: new Date(),
+    };
+  }
+
+  /** Relink genres and sync episodes by (season, number) so unchanged episode
+   *  ids — and viewers' watch progress — survive edits. */
+  private async syncRelations(movieId: string, input: AdminMovieInput): Promise<void> {
+    await this.db.delete(schema.movieGenres).where(eq(schema.movieGenres.movieId, movieId));
+    for (const genreSlug of input.genres) {
+      await this.db
+        .insert(schema.movieGenres)
+        .values({ movieId, genreSlug })
+        .onConflictDoNothing();
+    }
+
+    const existing = await this.db
+      .select()
+      .from(schema.episodes)
+      .where(eq(schema.episodes.movieId, movieId));
+    const byKey = new Map(existing.map((ep) => [`${ep.season}:${ep.number}`, ep]));
+    const keep = new Set<string>();
+
+    for (const ep of input.episodes) {
+      const match = byKey.get(`${ep.season}:${ep.number}`);
+      const values = {
+        season: ep.season,
+        number: ep.number,
+        title: ep.title,
+        duration: ep.duration,
+        sourceType: ep.sourceType,
+        oneDrivePath: ep.oneDrivePath,
+        fallbackUrl: ep.fallbackUrl,
+      };
+      if (match) {
+        keep.add(match.id);
+        await this.db.update(schema.episodes).set(values).where(eq(schema.episodes.id, match.id));
+      } else {
+        await this.db.insert(schema.episodes).values({ movieId, ...values });
+      }
+    }
+    const stale = existing.filter((ep) => !keep.has(ep.id)).map((ep) => ep.id);
+    if (stale.length > 0) {
+      await this.db.delete(schema.episodes).where(inArray(schema.episodes.id, stale));
+    }
+  }
+
+  async create(input: AdminMovieInput): Promise<Movie> {
+    const inserted = await this.db
+      .insert(schema.movies)
+      .values(this.movieValues(input))
+      .returning();
+    await this.syncRelations(inserted[0].id, input);
+    const [movie] = await this.hydrate(inserted);
+    return movie;
+  }
+
+  async update(id: string, input: AdminMovieInput): Promise<void> {
+    await this.db.update(schema.movies).set(this.movieValues(input)).where(eq(schema.movies.id, id));
+    await this.syncRelations(id, input);
+  }
+
+  async remove(id: string): Promise<void> {
+    // Genres, episodes, collections and progress cascade via FK constraints.
+    await this.db.delete(schema.movies).where(eq(schema.movies.id, id));
   }
 }
 
